@@ -1,0 +1,135 @@
+---
+title: "Intro to R, ggplot"
+author: "Bo Gao"
+date: "28/02/2021"
+always_allow_html: TRUE
+output:
+  html_notebook:
+    toc: TRUE
+  
+---
+
+# 1. Time-series plot
+
+## Prepare data
+We start by loading the `cases.Rda` file used by the CoMo app
+```{r}
+#try(lapply(paste('package:',names(sessionInfo()$otherPkgs),sep=""),detach,character.only=TRUE,unload=TRUE), silent = TRUE) # clear additional package space if any is loaded
+rm(list = ls()) # delete all objects in current environment
+
+library(rmarkdown) # paged_table
+library(ggplot2)
+
+load(url("https://github.com/ocelhay/como/raw/master/inst/comoapp/www/data/cases.Rda"))
+ls()
+```
+Two variables loaded. What's in `cases`
+
+```{r}
+paged_table(cases)
+```
+
+Get UK specific time series
+
+```{r}
+uk_cases <- cases[cases[["country"]] == "United Kingdom",] # filter rows
+uk_cases <- uk_cases[c("country", "date", "cases")]                   # pick columns
+uk_cases <- uk_cases[rowSums(is.na(uk_cases)) == 0,]       # remove NAs
+paged_table(uk_cases)
+```
+## All you need: data + geom_func(aes)
+`ggplot2`'s *grammar of graphics* states that graphs are built from 3 components:
+
+ - a data set
+ - a coordinate system
+ - geoms (specifications of aesthetic elements e.g. x and y locations, shape, size, and colour of data points)
+
+Where a sensible default coordinate system is useful for most graphs, the `data` and `geoms` components need to be provided by the user.
+
+```{r}
+ggplot(data = uk_cases) +                        # data
+  geom_point(mapping = aes(x = date, y = cases)) # geom_func(mapping)
+```
+Replace `geom_point` with `geom_line`
+```{r}
+ggplot(data = uk_cases) +                       # data
+  geom_line(mapping = aes(x = date, y = cases)) # geom_func(mapping)
+```
+Different `geom`s can be stacked.
+
+```{r}
+ggplot(data = uk_cases) +
+  geom_point(mapping = aes(x = date, y = cases)) +
+  geom_line(mapping = aes(x = date, y = cases)) +
+  geom_smooth(mapping = aes(x = date, y = cases), method = "loess", span = .2)
+```
+More on `geom_smooth`: [https://ggplot2.tidyverse.org/reference/geom_smooth.html](https://ggplot2.tidyverse.org/reference/geom_smooth.html), on `loess` : [https://en.wikipedia.org/wiki/Local_regression](https://en.wikipedia.org/wiki/Local_regression)
+
+## When the `g` in `gg` becomes less obvious
+
+So far the `data + geom_func(aes)` grammar is readable from the code, but we also see some repetition of code segment such as `mapping = aes(x = date, y = cases)` which programmers are born to avoid. So we simplify the code.
+
+```{r}
+ggplot(uk_cases, aes(x = date, y = cases)) +
+  geom_point() + geom_line() + geom_smooth(span = .2)
+```
+Exactly the same plot. We lost the `data` and `mapping` keywords, and the `aes` definition only appear once in the code. We now have shorter and easier code to maintain, but the *grammar* has become less obvious. This is also why every online tutorial is slightly different to each other despite performing the same actions.
+
+## Adding more data from separate data frames
+Get data for United States in `us_cases`.
+```{r}
+us_cases <- cases[cases[["country"]] == "United States",] # filter rows
+us_cases <- us_cases[c("country", "date", "cases")]       # pick columns
+us_cases <- us_cases[rowSums(is.na(us_cases)) == 0,]      # remove NAs
+paged_table(us_cases)
+```
+
+
+```{r}
+ggplot(uk_cases, aes(x = date, y = cases)) +
+  geom_point() + geom_line(data = us_cases)
+```
+
+The `data = us_cases` statement in `geom_line()` now overwrites the `data = uk_cases` statement inherited from `ggplot`.  [^1]
+
+[^1]:Here the `aes` did not need to be re-stated in `geom_line` despite having a different `data` to plot. Why?
+
+Let's add the world total number of daily cases in to our graph.
+
+```{r}
+world_sum <- aggregate(cases[, "cases"], list(date = cases[["date"]]), sum)
+world_sum <- world_sum[rowSums(is.na(world_sum)) == 0,]
+# paged_table(world_sum)
+ggplot(mapping = aes(x = date, y = cases)) +
+  geom_line(data = world_sum) + geom_line(data = uk_cases) + geom_line(data = us_cases)
+
+```
+Each of the three lines are from a different data frames. [^2]
+
+[^2]: If we remove `mapping = ` from `ggplot` so that it is written like `ggplot(aes(x = date, y = cases)) + ....` would it still work?
+
+## Colours, labels, scales, and coordinates
+We want to improve the graph so that
+
+ - The three time series are distinguishable
+ - Both axes are labeled clearly 
+
+```{r}
+options(scipen=999)  # turn off scientific notation like 1e+06
+g <- ggplot(mapping = aes(x = date, y = cases)) +
+  geom_line(data = world_sum, aes(color = "World"),) +
+  geom_line(data = uk_cases,  aes(color = "UK"),) +
+  geom_line(data = us_cases,  aes(color = "US"),) +
+  labs(x = "Dates (Mar. 2020 to Mar. 2021)", y = "Daily Cases", title = "Covid-19 daily cases comparison", subtitle = "subtitle", caption = "1 year case tracker") +  
+  scale_y_log10() + 
+  scale_color_manual(name="", values = c("World" = "black", "US"="#50e2c1", "UK"="#faaf3f"))
+  
+g1 <- g + scale_x_date(date_labels = "%b", date_breaks = "1 month", limits = as.Date(c("2020-03-01", "2021-03-01")))
+g2 <- g + coord_cartesian(xlim = as.Date(c("2020-03-01", "2021-03-01"))) + scale_x_date(date_labels = "%b", date_breaks = "1 month")
+plot(g1)
+plot(g2)
+```
+Note how `g1` and `g2` differ at truncating the lines at the beginning:
+ - `g1` - setting `limits` in the `scale` function truncates the data before they are plotted
+ - `g2` - changing the coordinate system only modifies the viewing-window of the graph
+***
