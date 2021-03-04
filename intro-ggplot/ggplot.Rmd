@@ -1,18 +1,25 @@
 ---
 title: "ggplot, Introduction to R"
 author: "Bo Gao"
-date: "02/03/2021"
+date: "03/03/2021"
 always_allow_html: TRUE
 output:
   html_notebook:
     toc: TRUE
+    toc_depth: 3
+    toc_float: FALSE
+    number_sections: TRUE
   pdf_document:
     toc: TRUE
+
 ---
 
-# 1. Grammar of graphics
 
-## Basics
+# Lecture
+
+## Grammar of graphics
+
+### Basics
 
 Each graph produced by `ggplot` is a top-down view on a stack of plots. At the bottom of this stack is the `ggplot` function which holds the **data** component. This data set is then mapped by `geom_*` functions (i.e. the **geom** component) onto a **coordinate system** to produce a plot. Each geom function has its own geometry definition of how to present the data. For instance, `geom_line()` draws lines through data points, `geom_point()` draws data points as individuals, and `geom_histogram` puts values of the plotted variable into bins before drawing vertical bars showing the size of each bin.
 
@@ -20,7 +27,7 @@ Each graph produced by `ggplot` is a top-down view on a stack of plots. At the b
 
 As well as `ggplot` and `geom_*` functions, we have other functions such as `theme_*` functions and `scale_*` functions to tweak other elements of the graph. This group of functions are not strictly required from the user. `ggplot` provides default values in absence of user defined functions. To make publication quality graphs, it is essential to understand how these functions work.
 
-## The `+` operator
+### The `+` operator
 
 Each layer on the ggplot graph stack is defined by a function, and these functions are all concatenated with the `+` operator. We know how `+` is defined for [literals](https://en.wikipedia.org/wiki/Literal_(computer_programming)), such as in `1 + 2` or `"abc" + "def"`. But what does it do in between functions that don't return a value?
 
@@ -40,9 +47,9 @@ function (e1, e2) {
 ref: [https://stackoverflow.com/questions/40450904/how-is-ggplot2-plus-operator-defined](https://stackoverflow.com/questions/40450904/how-is-ggplot2-plus-operator-defined)
 
 
-# 2. Time-series plot
+## Time series plot
 
-## Prepare data
+### Prepare data
 We start by loading the `cases.Rda` file used by the CoMo app
 ```{r}
 #try(lapply(paste('package:',names(sessionInfo()$otherPkgs),sep=""),detach,character.only=TRUE,unload=TRUE), silent = TRUE) # clear additional package space if any is loaded
@@ -69,7 +76,10 @@ uk_cases <- uk_cases[rowSums(is.na(uk_cases)) == 0,]       # remove NAs
 paged_table(uk_cases)
 ```
 
-## All you need: data + geom_func(aes)
+### First graph
+
+![source: https://github.com/rstudio/cheatsheets/raw/master/data-visualization-2.1.pdf](img/recall_gg_template.png)
+
 `ggplot2`'s *grammar of graphics* states that graphs are built from 3 components:
 
  - a data set
@@ -78,16 +88,18 @@ paged_table(uk_cases)
 
 Where a sensible default coordinate system is useful for most graphs, the `<data>` and `<geoms>` components need to be provided by the user.
 
+Here we tell `ggplot` that we want to draw a plot based on a data frame named `uk_cases`, and we pick the `geom_point` function to draw the data as points on the graph. We want to map the `date` column to the x axis, and the `cases` column to the y axis.
+
 ```{r}
 ggplot(data = uk_cases) +                        # data
   geom_point(mapping = aes(x = date, y = cases)) # geom_func(mapping)
 ```
-Replace `geom_point` with `geom_line`
+This is good, but often time series are drawn as lines. So let's replace `geom_point` with `geom_line`
 ```{r}
 ggplot(data = uk_cases) +                       # data
   geom_line(mapping = aes(x = date, y = cases)) # geom_func(mapping)
 ```
-Different `geom`s can be stacked.
+This looks better already. But what if I want both points and lines? Let's stack the two layers together. Also, we also add an additional `geom_smooth` layer to give us some visual on the overall trend.
 
 ```{r}
 ggplot(data = uk_cases) +
@@ -95,21 +107,21 @@ ggplot(data = uk_cases) +
   geom_line(mapping = aes(x = date, y = cases)) +
   geom_smooth(mapping = aes(x = date, y = cases), method = "loess", span = .2)
 ```
-More on `geom_smooth`: [https://ggplot2.tidyverse.org/reference/geom_smooth.html](https://ggplot2.tidyverse.org/reference/geom_smooth.html), on `loess` : [https://en.wikipedia.org/wiki/Local_regression](https://en.wikipedia.org/wiki/Local_regression)
+The graph is overly busy for no good reason now, but we demonstrated how different layers can be created by different `geom` functions and stacked together. More on `geom_smooth` please read: [https://ggplot2.tidyverse.org/reference/geom_smooth.html](https://ggplot2.tidyverse.org/reference/geom_smooth.html), and on `loess` : [https://en.wikipedia.org/wiki/Local_regression](https://en.wikipedia.org/wiki/Local_regression)
 
 
-## When the `g` in `gg` becomes less obvious
+### When the `g` in `gg` becomes less obvious
 
-So far the `data + geom_func(aes)` grammar is readable from the code, but we also see some repetition of code segment such as `mapping = aes(x = date, y = cases)`. So we simplify the code knowing the inheritance between `ggplot` and `geom_*` functions (`inherit.aes` property) is true by default.
+So far the `data + geom_func(aes)` grammar is readable from the code, but we also see some repetition of code segment such as `mapping = aes(x = date, y = cases)` which appears 3 times in our code. Knowing the inheritance between `ggplot` and `geom_*` functions (`inherit.aes` property) is true by default, we put the mapping definition to the base layer (the `ggplot` function) of the code.
 
 ```{r}
 ggplot(uk_cases, aes(x = date, y = cases)) +
   geom_point() + geom_line() + geom_smooth(span = .2)
 ```
-Exactly the same plot. We lost the `data` and `mapping` keywords, and the `aes` definition only appear once in the code. We now have shorter and easier code to maintain, but the *grammar* has become less obvious. This is also why every online tutorial is slightly different to each other despite performing the same actions.
+Exactly the same plot. Note that we lost the `data` and `mapping` keywords too, and the `aes` definition only appear once in the code. We now have shorter and easier code to maintain, but the *grammar* in **grammar of graphics** has become less obvious. This is also why every online tutorial is slightly different to each other despite performing the same actions.
 
 
-## Adding more data from separate data frames
+### Adding more time series
 Get data for United States in `us_cases`.
 ```{r}
 us_cases <- cases[cases[["country"]] == "United States",] # filter rows
@@ -118,6 +130,7 @@ us_cases <- us_cases[rowSums(is.na(us_cases)) == 0,]      # remove NAs
 paged_table(us_cases)
 ```
 
+We reset the UK time series to just one plot using the points and add the US time series as a line. The UK case numbers look a lot less scary now.
 
 ```{r}
 ggplot(uk_cases, aes(x = date, y = cases)) +
@@ -128,7 +141,7 @@ The `data = us_cases` statement in `geom_line()` now overwrites the `data = uk_c
 
 [^1]:Here the `aes` did not need to be re-stated in `geom_line` despite having a different `data` to plot. Why?
 
-Let's add the world total number of daily cases in to our graph.
+Let's add the world total number of daily cases in to our graph too. We draw all three time series with lines.
 
 ```{r}
 world_sum <- aggregate(cases[, "cases"], list(date = cases[["date"]]), sum)
@@ -138,14 +151,18 @@ ggplot(mapping = aes(x = date, y = cases)) +
   geom_line(data = world_sum) + geom_line(data = uk_cases) + geom_line(data = us_cases)
 
 ```
-Each of the three lines are from a different data frames. [^2]
+Note that each of the three lines are from a different data frame. [^2]
 
 [^2]: If we remove `mapping = ` from `ggplot` so that it is written like `ggplot(aes(x = date, y = cases)) + ....` would it still work?
 
 
-## Long vs wide data format
+### Long and wide data format
 
-In the example above, we used three separate data frames which resembles a **Wide** data format. For data in this format, each line is stored in a different column, so the `<data>` component needs redefinition in each `<geom>` layer. In a **Long** data format, a column stores the data needed to distinguish the series.
+In the example above, we used three separate data frames side by side which resembles a **Wide** data format. For data in this format, each series is stored in its own column. No filtering is needed once the column has been specified. The `<data>` component needs redefinition in each `<geom>` layer because a different column is used.
+
+The same set of data can be rearranged in a **Long** format. In such format, all series keep their data in the same column. To distinguish ownership of each row's data, an extra column is created.
+
+![](img/wide_long_format.png)
 
 ```{r}
 world_sum["country"] <- "World Total"
@@ -157,13 +174,17 @@ ggplot(data = long_data, mapping = aes(x = date, y = cases)) +
 Note how R automatically added a legend to the plot. This comes when an aesthetic setting is dependent on a column,`colour = country` in this case.
 
 
-## Colours, labels, scales, and coordinates
+### Colours, labels, scales, and coordinates
 (Back to the wide format when no legend is automatically generated by ggplot).
 
 We want to improve the graph so that
 
  - The three time series are distinguishable
  - Both axes are labeled clearly 
+ - Ticks on the axes are more informative
+ - Y is in log-scale
+ - Remove the grey background
+ - Truncate the lines so that the plot covers exactly one year in time
 
 
 ```{r}
@@ -181,7 +202,7 @@ g <- ggplot(mapping = aes(x = date, y = cases)) +
   scale_y_continuous(
     trans = "log10",
     breaks = scales::trans_breaks("log10", function(x) 10^x),
-    minor_breaks = scales::trans_breaks("log10", function(x) 10^x+x),
+    #minor_breaks = scales::trans_breaks("log10", function(x) 10^x+x),
     labels = scales::trans_format("log10", scales::math_format(10^.x))
   ) +
   annotation_logticks() +
@@ -196,7 +217,7 @@ plot(g1)
  - Log-scale [annotation_logticks](https://ggplot2.tidyverse.org/reference/annotation_logticks.html)
  
 
-## Coordinate system
+### Coordinate system
 
 We can set x range by adjusting the `<coordinate system>` (last element of the grammar) instead.
 
@@ -211,7 +232,7 @@ Note how `g1` and `g2` differ at truncating the lines at the beginning:
  - `g2` - changing the coordinate system only modifies the viewing-window of the graph
 
 
-## Annotations
+### Annotations
 
 ```{r}
 uk_peak <- uk_cases[which.max(uk_cases[["cases"]]),]
@@ -238,9 +259,11 @@ plot(g11)
 More on [annotate](https://ggplot2.tidyverse.org/reference/annotate.html) 
 
 
-# 3. More plot types
+# Hands on
 
-## Scatter
+## More plot types
+
+### Scatter
 ```{r}
 per_country_sum <- aggregate(x = list(cases[, "cases"], cases[,"deaths"]), by = list(country = cases[["country"]]), FUN = sum, na.rm = TRUE)
 
@@ -328,7 +351,7 @@ plot(g31)
 
 ```
 
-## Density
+### Density
 ```{r}
 
 per_country_sum[["death_rate"]] <- per_country_sum[["deaths"]]/per_country_sum[["cases"]]
@@ -341,7 +364,7 @@ g4 +
 
 ```
 
-## Boxplot
+### Boxplot
 ```{r}
 #per_country_sum[["death_rate"]] <- per_country_sum[["deaths"]]/per_country_sum[["cases"]]
 per_country_sum_no_yemen <- per_country_sum[per_country_sum[["country"]] != "Yemen",]
@@ -360,12 +383,12 @@ g_box <- g5 + geom_boxplot()
 plot(g_box)
 ```
 
-# 4. Other related packages
+## Other related packages
 
-## ggsci
+### ggsci
 Scientific Journal and Sci-Fi Themed Color Palettes for ggplot2
 
-## gridExtra
+### gridExtra
 left to right by default
 ```{r}
 library("ggsci")
@@ -377,7 +400,7 @@ g_box_jama <- g_box+scale_fill_jama()
 grid.arrange(g_box_npg, g_box_nejm, g_box_lancet, g_box_jama, ncol = 2)
 ```
 
-## ggExtra
+### ggExtra
 
 ```{r}
 library("ggExtra")
