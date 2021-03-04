@@ -1,7 +1,8 @@
 ---
-title: "ggplot, Introduction to R"
+title: "Plotting with ggplot"
+subtitle: "Part of the Introduction to R and key packages traning session"
 author: "Bo Gao"
-date: "03/03/2021"
+date: "04/03/2021"
 always_allow_html: TRUE
 output:
   html_notebook:
@@ -17,35 +18,13 @@ output:
 
 # Lecture
 
-## Grammar of graphics
-
-### Basics
+## Basics
 
 Each graph produced by `ggplot` is a top-down view on a stack of plots. At the bottom of this stack is the `ggplot` function which holds the **data** component. This data set is then mapped by `geom_*` functions (i.e. the **geom** component) onto a **coordinate system** to produce a plot. Each geom function has its own geometry definition of how to present the data. For instance, `geom_line()` draws lines through data points, `geom_point()` draws data points as individuals, and `geom_histogram` puts values of the plotted variable into bins before drawing vertical bars showing the size of each bin.
 
 ![source: https://github.com/rstudio/cheatsheets/raw/master/data-visualization-2.1.pdf](img/grammar.png)
 
 As well as `ggplot` and `geom_*` functions, we have other functions such as `theme_*` functions and `scale_*` functions to tweak other elements of the graph. This group of functions are not strictly required from the user. `ggplot` provides default values in absence of user defined functions. To make publication quality graphs, it is essential to understand how these functions work.
-
-### The `+` operator
-
-Each layer on the ggplot graph stack is defined by a function, and these functions are all concatenated with the `+` operator. We know how `+` is defined for [literals](https://en.wikipedia.org/wiki/Literal_(computer_programming)), such as in `1 + 2` or `"abc" + "def"`. But what does it do in between functions that don't return a value?
-
-Whereas commonly used math functions such as `max`, `abs`, and `sqrt` return the user with a numerical value, these functions such as the geom functions perform a set of procedures that either produce or modify a plot or several plots in the graph stack. The `+` operator here not only *sticks* these plots and performs the procedures one by one to produce the final graph. Because these functions are of different nature, the `+` operator in this context also acts as a [*dispatcher*](https://en.wikipedia.org/wiki/Multiple_dispatch). For those interested in knowing more about this subject and what's going on behind the scenes:  
-
-```{r, eval = FALSE}
-> ggplot2:::`+.gg`
-function (e1, e2) {
-  e2name <- deparse(substitute(e2))
-  if (is.theme(e1))
-    add_theme(e1, e2, e2name)
-  else if (is.ggplot(e1))
-    add_ggplot(e1, e2, e2name)
-}
-
-```
-ref: [https://stackoverflow.com/questions/40450904/how-is-ggplot2-plus-operator-defined](https://stackoverflow.com/questions/40450904/how-is-ggplot2-plus-operator-defined)
-
 
 ## Time series plot
 
@@ -110,7 +89,7 @@ ggplot(data = uk_cases) +
 The graph is overly busy for no good reason now, but we demonstrated how different layers can be created by different `geom` functions and stacked together. More on `geom_smooth` please read: [https://ggplot2.tidyverse.org/reference/geom_smooth.html](https://ggplot2.tidyverse.org/reference/geom_smooth.html), and on `loess` : [https://en.wikipedia.org/wiki/Local_regression](https://en.wikipedia.org/wiki/Local_regression)
 
 
-### When the `g` in `gg` becomes less obvious
+### Inheritance
 
 So far the `data + geom_func(aes)` grammar is readable from the code, but we also see some repetition of code segment such as `mapping = aes(x = date, y = cases)` which appears 3 times in our code. Knowing the inheritance between `ggplot` and `geom_*` functions (`inherit.aes` property) is true by default, we put the mapping definition to the base layer (the `ggplot` function) of the code.
 
@@ -144,7 +123,7 @@ The `data = us_cases` statement in `geom_line()` now overwrites the `data = uk_c
 Let's add the world total number of daily cases in to our graph too. We draw all three time series with lines.
 
 ```{r}
-world_sum <- aggregate(cases[, "cases"], list(date = cases[["date"]]), sum)
+world_sum <- aggregate(cases[, "cases"], list(date = cases[["date"]]), sum) # Forgot to filter the rows for the continents here
 world_sum <- world_sum[rowSums(is.na(world_sum)) == 0,]
 
 ggplot(mapping = aes(x = date, y = cases)) +
@@ -156,28 +135,11 @@ Note that each of the three lines are from a different data frame. [^2]
 [^2]: If we remove `mapping = ` from `ggplot` so that it is written like `ggplot(aes(x = date, y = cases)) + ....` would it still work?
 
 
-### Long and wide data format
-
-In the example above, we used three separate data frames side by side which resembles a **Wide** data format. For data in this format, each series is stored in its own column. No filtering is needed once the column has been specified. The `<data>` component needs redefinition in each `<geom>` layer because a different column is used.
-
-The same set of data can be rearranged in a **Long** format. In such format, all series keep their data in the same column. To distinguish ownership of each row's data, an extra column is created.
-
-![](img/wide_long_format.png)
-
-```{r}
-world_sum["country"] <- "World Total"
-long_data <- rbind(uk_cases, us_cases, world_sum)
-ggplot(data = long_data, mapping = aes(x = date, y = cases)) +
-  geom_line(aes(colour = country))
-
-```
-Note how R automatically added a legend to the plot. This comes when an aesthetic setting is dependent on a column,`colour = country` in this case.
 
 
 ### Colours, labels, scales, and coordinates
-(Back to the wide format when no legend is automatically generated by ggplot).
 
-We want to improve the graph so that
+Now let's better the graph so that
 
  - The three time series are distinguishable
  - Both axes are labeled clearly 
@@ -194,7 +156,7 @@ g <- ggplot(mapping = aes(x = date, y = cases)) +
   geom_line(data = world_sum, aes(color = "World"),) +
   geom_line(data = uk_cases,  aes(color = "UK"),) +
   geom_line(data = us_cases,  aes(color = "US"),) +
-  labs(x = "Dates (Mar. 2020 to Mar. 2021)", y = "Daily Cases", title = "Covid-19 daily cases comparison", subtitle = "1 year tracker", caption = "source: CoMo") +
+  labs(x = "Dates", y = "Daily Cases", title = "Covid-19 daily cases comparison", subtitle = "1 year tracker", caption = "source: CoMo") +
   # scale_y_log10(
   #   breaks = scales::trans_breaks("log10", function(x) 10^x),
   #   labels = scales::trans_format("log10", scales::math_format(10^.x))
@@ -231,6 +193,12 @@ Note how `g1` and `g2` differ at truncating the lines at the beginning:
  - `g1` - setting `limits` in the `scale` function truncates the data before they are plotted
  - `g2` - changing the coordinate system only modifies the viewing-window of the graph
 
+This is mostly useful when you want to zoom in to an area of the plot.
+```{r}
+g2 <- g + coord_cartesian(xlim = as.Date(c("2020-07-01", "2020-08-01"))) + scale_x_date(date_labels = "%b", date_breaks = "1 month")
+
+plot(g2)
+```
 
 ### Annotations
 
@@ -259,7 +227,25 @@ plot(g11)
 More on [annotate](https://ggplot2.tidyverse.org/reference/annotate.html) 
 
 
+
 # Hands on
+
+## Long and wide data format
+
+In the previous section, we used three separate data frames side by side which resembles a **Wide** data format. For data in this format, each series is stored in its own column. No filtering is needed once the column has been specified. The `<data>` component needs redefinition in each `<geom>` layer because a different column is used.
+
+The same set of data can be rearranged in a **Long** format. In such format, all series keep their data in the same column. To distinguish ownership of each row's data, an extra column is created.
+
+![](img/wide_long_format.png)
+
+```{r}
+world_sum["country"] <- "World Total"
+long_data <- rbind(uk_cases, us_cases, world_sum)
+ggplot(data = long_data, mapping = aes(x = date, y = cases)) +
+  geom_line(aes(colour = country))
+
+```
+Note how R automatically added a legend to the plot. This comes when an aesthetic setting is dependent on a column,`colour = country` in this case.
 
 ## More plot types
 
@@ -406,6 +392,28 @@ grid.arrange(g_box_npg, g_box_nejm, g_box_lancet, g_box_jama, ncol = 2)
 library("ggExtra")
 ggMarginal(g31, type = "histogram")
 ```
+
+
+
+## The `+` operator
+
+Each layer on the ggplot graph stack is defined by a function, and these functions are all concatenated with the `+` operator. We know how `+` is defined for [literals](https://en.wikipedia.org/wiki/Literal_(computer_programming)), such as in `1 + 2` or `"abc" + "def"`. But what does it do in between functions that don't return a value?
+
+Whereas commonly used math functions such as `max`, `abs`, and `sqrt` return the user with a numerical value, these functions such as the geom functions perform a set of procedures that either produce or modify a plot or several plots in the graph stack. The `+` operator here not only *sticks* these plots and performs the procedures one by one to produce the final graph. Because these functions are of different nature, the `+` operator in this context also acts as a [*dispatcher*](https://en.wikipedia.org/wiki/Multiple_dispatch). For those interested in knowing more about this subject and what's going on behind the scenes:  
+
+```{r, eval = FALSE}
+> ggplot2:::`+.gg`
+function (e1, e2) {
+  e2name <- deparse(substitute(e2))
+  if (is.theme(e1))
+    add_theme(e1, e2, e2name)
+  else if (is.ggplot(e1))
+    add_ggplot(e1, e2, e2name)
+}
+
+```
+ref: [https://stackoverflow.com/questions/40450904/how-is-ggplot2-plus-operator-defined](https://stackoverflow.com/questions/40450904/how-is-ggplot2-plus-operator-defined)
+
 
 
 # References
