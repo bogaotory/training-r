@@ -1,6 +1,6 @@
 ---
 title: "Introduction to sensitivity analysis"
-subtitle: "Part of the CoMo traning session"
+subtitle: "Part of CoMo consortium's MMID course"
 author: "Bo Gao"
 date: "08/04/2021"
 always_allow_html: TRUE
@@ -8,7 +8,8 @@ output:
   html_notebook:
     toc: TRUE
     toc_depth: 3
-    toc_float: FALSE
+    toc_float: TRUE
+    toc_expand: TRUE
     number_sections: TRUE
   pdf_document:
     toc: TRUE
@@ -27,9 +28,7 @@ By showing how the model respond to these changes, sensitivity analysis is usefu
  - Model building
  - Model evaluation
 
-
-
-
+> *Sensitivity analysis is part of the iterative development cycle of a system dynamic model.*
 
 # Parameter sensitivity
 
@@ -38,18 +37,20 @@ Challenges for a modeller when choosing value for parameters is that in the real
  - Many model parameters are difficult or even impossible to measure to a great deal of accuracy.
  - Parameter values change over time.
 
-Therefore, often the modeller can not be certain about the value chosen for a parameter and has to use estimates. Sensitivity analysis allows the modeller to determine what level of accuracy is required for a parameter:
+Therefore, often the modeller can not be certain about the value chosen for a parameter and has to use **estimates**. Sensitivity analysis allows the modeller to determine what level of accuracy is required for a parameter:
 
  - Greater precision is needed for parameters that the model is sensitive to
  - Less precision is needed for parameters that the model is insensitive to
 
-By comparing model output to real world observations, sensitivity analysis helps the modeller to choose reasonable values for parameters.
+> By comparing model output to real world observations, sensitivity analysis helps the modeller to choose reasonable values for parameters.
 
 ## Sampling
 
 Each input parameter of a model can be defined to have an appropriate **probability density function**. Then, the model can be simulated by **sampling** a single value from each parameter's distribution. Many samples should be taken (and for stochastic models many simulations should be run per sample), producing variable output values.
 
-There are various approaches that could be taken to sample from the parameter distributions.
+Sampling value for one parameter is straightforward, but as the dimension of the parameter space increases, the complexity increases exponentially, which can quite easily exceed the available computing resources you have available.
+
+There are various approaches that could be taken to sample from the parameter distributions. In a 2-dimensional parameter space:
 
 ![source: https://tbiomed.biomedcentral.com/articles/10.1186/1742-4682-5-4#Sec18](img/SaSAT_sampling.png)
 
@@ -97,9 +98,10 @@ ggplot(data = data.frame(B)) +
   scale_y_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.2))
 
 ```
-[more: https://cran.r-project.org/web/packages/lhs/vignettes/lhs_basics.html](https://cran.r-project.org/web/packages/lhs/vignettes/lhs_basics.html)
-[https://github.com/bertcarnell/lhs](https://github.com/bertcarnell/lhs)
-[https://cran.r-project.org/web/packages/lhs/index.html](https://cran.r-project.org/web/packages/lhs/index.html)
+
+ - [https://cran.r-project.org/web/packages/lhs/vignettes/lhs_basics.html](https://cran.r-project.org/web/packages/lhs/vignettes/lhs_basics.html)
+ - [https://github.com/bertcarnell/lhs](https://github.com/bertcarnell/lhs)
+ - [https://cran.r-project.org/web/packages/lhs/index.html](https://cran.r-project.org/web/packages/lhs/index.html)
 
 
 
@@ -113,7 +115,7 @@ function in the `randtoolbox` package.
 ```{r}
 library(randtoolbox)
 X.sobol <- sensitivity::parameterSets(
-  par.ranges = list(X1 = c(1,1000), X2=c(1,4)),
+  par.ranges = list(X1 = c(1,1000), X2 = c(1,4)),
   samples = 100,
   method = "sobol"
 )
@@ -146,6 +148,8 @@ points(X.innergrid, col="red")
 
 ## Example SEIR model
 
+### Definition
+
 ```{r}
 rm(list = ls())
 
@@ -156,9 +160,17 @@ library("scales") # label_percent()
 
 seir_dt <- function(t, state, parameters){
   with(as.list(c(state, parameters)), {
-    beta <- theta * p # beta = contact_rate * transmission_risk
+    theta2 <- theta
+    if (lk.on) {
+      if (t > lk.t && t < (lk.t + lk.len)) {
+        theta2 <- theta * lk.eff
+      }
+    }
+
+    beta <- theta2 * p
     sigma <- 1/sigmad
     gamma <- 1/gammad
+
     dSdt = mu - beta*I*S - mu*S
     dEdt = beta*I*S - (sigma+mu)*E
     dIdt = sigma*E - (gamma+mu)*I
@@ -187,10 +199,9 @@ plot_out <- function(out.df) {
 
 ```
 
-### First look
 
 ```{r}
-# Set parameter values
+# Set estimated parameter values
 # beta <- 520/365; # beta = contact_rate * transmission_risk
 # sigma <- 1/60; # 1/latent_days
 # gamma <- 1/30; # 1/infectious_days
@@ -202,10 +213,17 @@ gammad_est <- 24 # 1/infectious_days
 # gammad_est <- 7 # 1/infectious_days
 mu_est <- 712680/(66650000*365) # UK birth and population figures 2019
 
-init_state <- c(S = 0.98, E = 0.01, I = 0.01, R = 0.0)
+# Lockdown
+# lk.on_est <- FALSE
+lk.t_est <- 15
+lk.len_est <- 90
+lk.eff_est <- 0.2
 
+init_state <- c(S = 0.98, E = 0.01, I = 0.01, R = 0.0)
 timeline <- seq(0,365)
-p0 <- c(theta = theta_est, p = p_est, sigmad = sigmad_est, gammad = gammad_est, mu = mu_est)
+
+p0 <- c(theta = theta_est, p = p_est, sigmad = sigmad_est, gammad = gammad_est, mu = mu_est,
+  lk.on = FALSE, lk.t = lk.t_est, lk.len = lk.len_est, lk.eff = lk.eff_est)
 
 out <- ode(y = init_state, times = timeline, func = seir_dt, parms = p0)
 out.df <- data.frame(out)
@@ -213,35 +231,13 @@ plot_out(out.df)
 
 ```
 
-### Add intervention
+### With intervention
 
 ```{r}
-# Lockdown
-lk.t <- 15
-lk.len <- 90
-lk.eff <- 0.2
 
 p1 <- c(theta = theta_est, p = p_est, sigmad = sigmad_est, gammad = gammad_est, mu = mu_est,
-  lk.t = lk.t, lk.len = lk.len, lk.eff = lk.eff)
+  lk.on = TRUE, lk.t = lk.t_est, lk.len = lk.len_est, lk.eff = lk.eff_est)
 
-seir_dt <- function(t, state, parameters){
-  with(as.list(c(state, parameters)), {
-    theta2 <- theta
-    if (t > lk.t && t < lk.t + lk.len) {
-      theta2 <- theta * lk.eff
-    }
-
-    beta <- theta2 * p
-    sigma <- 1/sigmad
-    gamma <- 1/gammad
-
-    dSdt = mu - beta*I*S - mu*S
-    dEdt = beta*I*S - (sigma+mu)*E
-    dIdt = sigma*E - (gamma+mu)*I
-    dRdt = gamma*I - mu*R
-    return(list(c(dSdt, dEdt, dIdt, dRdt)))
-  })  
-}
 out <- ode(y = init_state, times = timeline, func = seir_dt, parms = p1)
 out.df <- data.frame(out)
 i_peak <- out.df[which.max(out.df[["I"]]),]
@@ -275,36 +271,46 @@ p_set <- sensitivity::parameterSets(
     samples = c(
       3, 5, 3, 3,
       1, 3, 4, 5
-    ),
+    ), # 8100
     method = "grid"
 )
 
 unique(p_set[,"lk.len"])
 ```
 ```{r}
-seir_fun(p_set[20,])
+seir_fun(c(p_set[20,], lk.on = TRUE))
 ```
 
 ### Run model per sample of parameter set
 
 ```{r}
+f_name <- "results.df.rds"
 results.df <- data.frame(p_set)
 results.df[["imax"]] <- 0.0
-start_time <- Sys.time()
-for (rr in 1:nrow(p_set) ) {
-# for (rr in 1:1000 ) {
-   results.df[rr,"imax"] <- seir_fun(p_set[rr,])
+
+if (!file.exists(f_name)) {
+  start_time <- Sys.time()  
+  for (rr in 1:nrow(p_set) ) {
+  # for (rr in 1:1000 ) {
+    pp <- c(p_set[rr,], lk.on = TRUE)
+    results.df[rr,"imax"] <- seir_fun(pp)
+  }
+  end_time <- Sys.time()
+  end_time - start_time # Time difference of 2.52515 mins
+  saveRDS(results.df, file = f_name)
 }
-end_time <- Sys.time()
-end_time - start_time # Time difference of 2.52515 mins
+
 ```
 
 ![Here's one I made earlier](img/heres_one_made_earlier.png)
 
 ```{r}
+results.df <- readRDS(f_name)
 p_best <- results.df[which.min(results.df[["imax"]]),]
 p_best
-plot_out(data.frame(ode(y = init_state, times = timeline, func = seir_dt, parms = p_best)))
+plot_out(data.frame(
+  ode(y = init_state, times = timeline, func = seir_dt, parms = c(p_best, lk.on = TRUE) )))
+
 ```
 
 ### Sensitivity analysis
@@ -334,17 +340,218 @@ ggplot(data = results.df.ft, aes(x = lk.len, y = imax, fill = p)) +
   geom_boxplot() +
   facet_grid(lk.t~theta, labeller = label_both) +
   scale_fill_npg()
-
-
 ```
 
 ```{r}
-ggplot(data = results.df, aes(x = p, y = theta, color = imax)) + geom_point() + scale_color_gradient(low="blue", high="red")
+#ggplot(data = results.df, aes(x = p, y = theta, color = imax)) + geom_point() + scale_color_gradient(low="blue", high="red")
 ```
 
 # Structure sensitivity
 
+> ... We argue that if we lack detailed knowledge of the biology of the transmission process, parameter estimation should be accompanied by a structural sensitivity analysis, in addition to the standard statistical uncertainty analysis. ... 
 
+[Lloyd AL. Sensitivity of Model-Based Epidemiological Parameter Estimation to Model Assumptions. Mathematical and Statistical Estimation Approaches in Epidemiology. 2009;123-141. doi:10.1007/978-90-481-2313-1_6](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7121564/)
+
+## Inclusion of latency (SIR > SEIR)
+
+![Impact of latency on a disease outbreak [Lloyd AL. 2009](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7121564/)](img/sir_v_seir.png)
+
+## Gamma distributed latent period
+
+> ... An individual’s chance of recovery is not constant over time: typically, the recovery rate increases over time. In terms of a mathematical model, this leads to the complication that the times at which different individuals became infected must be tracked. ... A mathematical trick allows the inclusion of non-exponential distributions within the compartmental framework. ... [Lloyd AL. 2009](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7121564/)
+
+
+We now look at how to track the times at which different individuals became exposed. By subdividing the E compartment into `m` stages:
+
+![Different implementations of the E compartment](img/exp_v_gamma.png)
+The progressions between stages occur at constant rate, leading to an exponential waiting time in each stage. The overall latent period is described by the sum of these `m` independent exponential distributions. i.e. latent periods are now gamma distributed with shape parameter `m`.
+
+ - The sum of `k` exponential (`λ`) random variables is a gamma (`k`, `λ`) random variable.
+ - `λ` is rate of events (`λ=1/θ`, `θ` being the mean wait time)
+ - Mean of exponential distribution of rate `λ` is `1/λ`
+ - Mean of gamma distribution, `k` events of rate `λ`, is `k/λ`
+ - The exponential distribution predicts the wait time until the **very first** event.
+ - The gamma distribution, on the other hand, predicts the wait time until the **k-th** event occurs.
+
+[Gamma Distribution — Intuition, Derivation, and Examples](https://towardsdatascience.com/gamma-distribution-intuition-derivation-and-examples-55f407423840)
+
+ - `k` in out example is the number of subdivided compartments in `E` which is `m`
+ - `λ` in our example is the incubation rate `σ`
+
+### Example `SEmIR` model 
+
+```{r}
+se7ir_dt <- function(t, state, parameters){
+  with(as.list(c(state, parameters)), {
+    theta2 <- theta
+    if (lk.on) {
+      if (t > lk.t && t < (lk.t + lk.len)) {
+        theta2 <- theta * lk.eff
+      }
+    }
+
+    beta <- theta2 * p
+    sigma <- 1/sigmad
+    gamma <- 1/gammad
+
+    m <- 7
+
+    dSdt = mu - beta*I*S - mu*S
+    # dEdt = beta*I*S - (sigma+mu)*E
+    dE1dt = beta*I*S - (m*sigma+mu)*E1
+    dE2dt = m*sigma*E1 - (m*sigma+mu)*E2
+    dE3dt = m*sigma*E2 - (m*sigma+mu)*E3
+    dE4dt = m*sigma*E3 - (m*sigma+mu)*E4
+    dE5dt = m*sigma*E4 - (m*sigma+mu)*E5
+    dE6dt = m*sigma*E5 - (m*sigma+mu)*E6
+    dE7dt = m*sigma*E6 - (m*sigma+mu)*E7
+    dIdt = m*sigma*E7 - (gamma+mu)*I
+    dRdt = gamma*I - mu*R
+    return(list(c(
+      dSdt,
+      dE1dt,
+      dE2dt,
+      dE3dt,
+      dE4dt,
+      dE5dt,
+      dE6dt,
+      dE7dt,
+      dIdt,
+      dRdt
+    )))
+  })  
+}
+init_state_e7 <- c(
+  S = 0.98,
+  E1 = 0.01/7,
+  E2 = 0.01/7,
+  E3 = 0.01/7,
+  E4 = 0.01/7,
+  E5 = 0.01/7,
+  E6 = 0.01/7,
+  E7 = 0.01/7,
+  I = 0.01,
+  R = 0.0
+)
+out0 <- ode(y = init_state, times = timeline, func = seir_dt, parms = p0)
+out0.df <- data.frame(out0)
+out07 <- ode(y = init_state_e7, times = timeline, func = se7ir_dt, parms = p0)
+out07.df <- data.frame(out07)
+
+out07.df[["E"]] <-
+          out07.df[["E1"]] +
+          out07.df[["E2"]] +
+          out07.df[["E3"]] +
+          out07.df[["E4"]] +
+          out07.df[["E5"]] +
+          out07.df[["E6"]] +
+          out07.df[["E7"]]
+#i_peak <- out7.df[which.max(out7.df[["I"]]),]
+g0 <- plot_out(data.frame(out0))
+g70 <- plot_out(out07.df)
+
+out1 <- ode(y = init_state, times = timeline, func = seir_dt, parms = p1)
+out1.df <- data.frame(out1)
+out17 <- ode(y = init_state_e7, times = timeline, func = se7ir_dt, parms = p1)
+out17.df <- data.frame(out17)
+out17.df[["E"]] <-
+          out17.df[["E1"]] +
+          out17.df[["E2"]] +
+          out17.df[["E3"]] +
+          out17.df[["E4"]] +
+          out17.df[["E5"]] +
+          out17.df[["E6"]] +
+          out17.df[["E7"]]
+g1 <- plot_out(data.frame(out1))
+g71 <- plot_out(out17.df)
+
+grid.arrange(g0, g70, g1, g71,  ncol = 2)
+```
+A closer look at the comparison between E and I of the two models
+
+```{r}
+plot_compare <- function(out.df, out7.df) {
+  
+  i_max <- out.df[which.max(out.df[["I"]]),]
+  i_max7 <- out7.df[which.max(out7.df[["I"]]),]
+  e_max <- out.df[which.max(out.df[["E"]]),]
+  e_max7 <- out7.df[which.max(out7.df[["E"]]),]
+  ggplot( mapping = aes(x = time))+
+    geom_line(data = out.df, mapping = aes(y = E, color = "E")) +
+    geom_line(data = out.df, mapping = aes(y = I, color = "I")) +
+    geom_line(data = out7.df, mapping = aes(y = E, color = "E"), linetype = "dashed") +
+    geom_line(data = out7.df, mapping = aes(y = I, color = "I"), linetype = "dashed") +
+    geom_point(data = i_max, mapping = aes(y = I), color = "#DC0000FF") +
+    geom_point(data = i_max7, mapping = aes(y = I), color = "#DC0000FF") +
+    geom_point(data = e_max, mapping = aes(y = E), color = "#F39B7FFF") +
+    geom_point(data = e_max7, mapping = aes(y = E), color = "#F39B7FFF") +
+    annotate(
+      geom = "text",
+      x = i_max[["time"]] - 5, 
+      y = i_max[["I"]] + 0.05, 
+      label = paste(i_max$time, label_percent()(i_max$I), sep = ", ")
+    ) +
+    annotate(
+      geom = "text",
+      x = i_max7[["time"]] + 5, 
+      y = i_max7[["I"]] + 0.05, 
+      label = paste(i_max7$time, label_percent()(i_max7$I), sep = ", ")
+    ) +
+    annotate(
+      geom = "text",
+      x = e_max[["time"]] - 5, 
+      y = e_max[["E"]] + 0.05, 
+      label = paste(e_max$time, label_percent()(e_max$I), sep = ", ")
+    ) +
+    annotate(
+      geom = "text",
+      x = e_max7[["time"]] + 5, 
+      y = e_max7[["E"]] + 0.05, 
+      label = paste(e_max7$time, label_percent()(e_max7$I), sep = ", ")
+    ) +
+    geom_curve(aes(
+        xend = e_max7[["time"]],
+        yend = e_max7[["E"]],
+        x = e_max[["time"]],
+        y = e_max[["E"]]
+      ),
+      curvature = 0.0,
+      arrow = arrow(length = unit(10, "points"))
+    ) +
+    geom_curve(aes(
+        xend = i_max7[["time"]],
+        yend = i_max7[["I"]],
+        x = i_max[["time"]],
+        y = i_max[["I"]]
+      ),
+      curvature = 0.0,
+      arrow = arrow(length = unit(10, "points"))
+    ) +
+    scale_color_manual(name="", values = c(
+      "S" = "#3C5488FF",
+      "E" = "#F39B7FFF",
+      "E_se7ir" = "#F39B7FFF",
+      "I" = "#DC0000FF",
+      "I_se7ir" = "#DC0000FF",
+      "R" = "#00A087FF")) +
+    labs(x = "Time", y = "Population (%)") +
+    coord_cartesian(xlim=c(0,70))
+}
+```
+```{r,fig.height = 8, fig.width=8}
+
+p1 <- plot_compare(out0.df, out07.df)
+p2 <- plot_compare(out1.df, out17.df)
+
+grid.arrange(p1, p2, ncol = 1, heights =unit(c(10,10), c("cm", "cm")) )
+
+```
+
+> What happens if we subdivide the `I` compartment too?
+
+## Estimating R0 of different models
+
+![Effect of model structure over the estimation of R0 [Lloyd AL. 2009](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7121564/)](img/r0.png)
 
 # References
  - Sampling and sensitivity analyses tools (SaSAT) for computational modelling https://tbiomed.biomedcentral.com/articles/10.1186/1742-4682-5-4#Sec18
