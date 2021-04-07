@@ -1,0 +1,361 @@
+---
+title: "Introduction to sensitivity analysis"
+subtitle: "Part of the CoMo traning session"
+author: "Bo Gao"
+date: "08/04/2021"
+always_allow_html: TRUE
+output:
+  html_notebook:
+    toc: TRUE
+    toc_depth: 3
+    toc_float: FALSE
+    number_sections: TRUE
+  pdf_document:
+    toc: TRUE
+
+---
+
+# Overview
+
+Sensitivity analysis is the process of determining how **sensitive** a model is to
+
+ - Changes in parameter values
+ - Changes in the structure of the model
+
+By showing how the model respond to these changes, sensitivity analysis is useful in
+
+ - Model building
+ - Model evaluation
+
+
+
+
+
+# Parameter sensitivity
+
+Challenges for a modeller when choosing value for parameters is that in the real world:
+
+ - Many model parameters are difficult or even impossible to measure to a great deal of accuracy.
+ - Parameter values change over time.
+
+Therefore, often the modeller can not be certain about the value chosen for a parameter and has to use estimates. Sensitivity analysis allows the modeller to determine what level of accuracy is required for a parameter:
+
+ - Greater precision is needed for parameters that the model is sensitive to
+ - Less precision is needed for parameters that the model is insensitive to
+
+By comparing model output to real world observations, sensitivity analysis helps the modeller to choose reasonable values for parameters.
+
+## Sampling
+
+Each input parameter of a model can be defined to have an appropriate **probability density function**. Then, the model can be simulated by **sampling** a single value from each parameter's distribution. Many samples should be taken (and for stochastic models many simulations should be run per sample), producing variable output values.
+
+There are various approaches that could be taken to sample from the parameter distributions.
+
+![source: https://tbiomed.biomedcentral.com/articles/10.1186/1742-4682-5-4#Sec18](img/SaSAT_sampling.png)
+
+### Latin hypercube sampling with the `lhs` package in R
+
+Two parameters of uniform distribution
+
+```{r}
+# install.packages("lhs")
+library("lhs")
+set.seed(10)
+A <- lhs::randomLHS(5, 2) # 5 samples, 2 parameters
+gA <- ggplot(data = data.frame(A), mapping = aes( x = X1, y = X2)) +
+  geom_point() + coord_fixed() +
+  scale_x_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.2)) +
+  scale_y_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.2)) +
+  labs(title = "A <- lhs::randomLHS(5, 2)")
+
+```
+Expand on existing sample
+```{r}
+A2 <- lhs::augmentLHS(A, 5) # 5 more samples on top of A
+A2_new <- A2[!(A2[,1] %in% A[,1] ),]
+gA_exp <- ggplot(mapping = aes( x = X1, y = X2)) +
+  geom_point(data = data.frame(A)) +
+  geom_point(data = data.frame(A2_new), color = "#00A087FF") +
+  coord_fixed() +
+  scale_x_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.2)) +
+  scale_y_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.2)) +
+  theme(legend.position="none") +
+  labs(title = "A2 <- lhs::augmentLHS(A, 5)")
+grid.arrange(gA, gA_exp, ncol = 2)
+```
+
+
+X1 is normally distributed
+
+```{r}
+B <- lhs::randomLHS(1000, 2) # 1000 samples of 2 parameters
+B[,1] <- qnorm(B[,1], mean = 7, sd = 1) # X1 is normally distributed
+ggplot(data = data.frame(B)) +
+  geom_point(mapping = aes( x = X1, y = X2)) +
+  geom_density(mapping = aes(x = X1), color = "#00A087FF", size = 2) +
+  scale_x_continuous(limits = c(2,12), breaks = seq(2, 12, by = 1)) +
+  scale_y_continuous(limits = c(0,1), breaks = seq(0, 1, by = 0.2))
+
+```
+[more: https://cran.r-project.org/web/packages/lhs/vignettes/lhs_basics.html](https://cran.r-project.org/web/packages/lhs/vignettes/lhs_basics.html)
+[https://github.com/bertcarnell/lhs](https://github.com/bertcarnell/lhs)
+[https://cran.r-project.org/web/packages/lhs/index.html](https://cran.r-project.org/web/packages/lhs/index.html)
+
+
+
+### Sampling with the `sensitivity` package in R
+
+The `sensitivity::parameterSets` function provides three methods of sampling:
+
+ 1. Method "sobol" generates uniformly distributed Sobol low discrepancy numbers, using the `sobol`
+function in the `randtoolbox` package.
+
+```{r}
+library(randtoolbox)
+X.sobol <- sensitivity::parameterSets(
+  par.ranges = list(X1 = c(1,1000), X2=c(1,4)),
+  samples = 100,
+  method = "sobol"
+)
+plot(X.sobol)
+```
+![source: https://en.wikipedia.org/wiki/Low-discrepancy_sequence](img/quasi_v_pseudo.png)
+
+ 2. Method "grid" generates a grid within the parameter ranges, including its extremes, with number
+of points determined by samples
+ 3. Method "innergrid" generates a grid within the parameter ranges, with edges of the grid offset
+from the extremes.
+
+```{r}
+library("sensitivity")
+
+X.grid <- sensitivity::parameterSets(
+  par.ranges = list(X1 = c(1,1000), X2 = c(1,4)),
+  samples = c(8,10),
+  method = "grid"
+)
+plot(X.grid)
+
+X.innergrid <- sensitivity::parameterSets(
+  par.ranges = list(X1 = c(1,1000), X2 = c(1,4)),
+  samples = c(8,10),
+  method = "innergrid"
+)
+points(X.innergrid, col="red")
+```
+
+## Example SEIR model
+
+```{r}
+rm(list = ls())
+
+library("deSolve")
+library("ggplot2") #; library(ggsci)
+library("gridExtra")
+library("scales") # label_percent()
+
+seir_dt <- function(t, state, parameters){
+  with(as.list(c(state, parameters)), {
+    beta <- theta * p # beta = contact_rate * transmission_risk
+    sigma <- 1/sigmad
+    gamma <- 1/gammad
+    dSdt = mu - beta*I*S - mu*S
+    dEdt = beta*I*S - (sigma+mu)*E
+    dIdt = sigma*E - (gamma+mu)*I
+    dRdt = gamma*I - mu*R
+    return(list(c(dSdt, dEdt, dIdt, dRdt)))
+  })  
+}
+
+plot_out <- function(out.df) {
+  i_max <- out.df[which.max(out.df[["I"]]),]
+  ggplot(data = out.df, mapping = aes(x = time))+
+    geom_line(mapping = aes(y = S, color = "S")) +
+    geom_line(mapping = aes(y = E, color = "E")) +
+    geom_line(mapping = aes(y = I, color = "I")) +
+    geom_line(mapping = aes(y = R, color = "R")) +
+    geom_point(data = i_max, mapping = aes(y = I), color = "#DC0000FF") +
+    annotate(
+      geom = "text",
+      x = i_max[["time"]] + 20, 
+      y = i_max[["I"]] + 0.05, 
+      label = paste(i_max$time, label_percent()(i_max$I), sep = ", ")
+    ) +
+    scale_color_manual(name="", values = c("S" = "#3C5488FF", "E"="#F39B7FFF", "I"="#DC0000FF", "R"="#00A087FF")) +
+    labs(x = "Time", y = "Population (%)")
+}
+
+```
+
+### First look
+
+```{r}
+# Set parameter values
+# beta <- 520/365; # beta = contact_rate * transmission_risk
+# sigma <- 1/60; # 1/latent_days
+# gamma <- 1/30; # 1/infectious_days
+theta_est <- 3
+p_est <- 0.15
+sigmad_est <- 7 # 1/latent_days
+gammad_est <- 24 # 1/infectious_days
+# sigmad_est <- 11 # 1/latent_days
+# gammad_est <- 7 # 1/infectious_days
+mu_est <- 712680/(66650000*365) # UK birth and population figures 2019
+
+init_state <- c(S = 0.98, E = 0.01, I = 0.01, R = 0.0)
+
+timeline <- seq(0,365)
+p0 <- c(theta = theta_est, p = p_est, sigmad = sigmad_est, gammad = gammad_est, mu = mu_est)
+
+out <- ode(y = init_state, times = timeline, func = seir_dt, parms = p0)
+out.df <- data.frame(out)
+plot_out(out.df)
+
+```
+
+### Add intervention
+
+```{r}
+# Lockdown
+lk.t <- 15
+lk.len <- 90
+lk.eff <- 0.2
+
+p1 <- c(theta = theta_est, p = p_est, sigmad = sigmad_est, gammad = gammad_est, mu = mu_est,
+  lk.t = lk.t, lk.len = lk.len, lk.eff = lk.eff)
+
+seir_dt <- function(t, state, parameters){
+  with(as.list(c(state, parameters)), {
+    theta2 <- theta
+    if (t > lk.t && t < lk.t + lk.len) {
+      theta2 <- theta * lk.eff
+    }
+
+    beta <- theta2 * p
+    sigma <- 1/sigmad
+    gamma <- 1/gammad
+
+    dSdt = mu - beta*I*S - mu*S
+    dEdt = beta*I*S - (sigma+mu)*E
+    dIdt = sigma*E - (gamma+mu)*I
+    dRdt = gamma*I - mu*R
+    return(list(c(dSdt, dEdt, dIdt, dRdt)))
+  })  
+}
+out <- ode(y = init_state, times = timeline, func = seir_dt, parms = p1)
+out.df <- data.frame(out)
+i_peak <- out.df[which.max(out.df[["I"]]),]
+plot_out(out.df)
+
+```
+
+### Sampling
+
+```{r}
+seir_fun <- function(parameters){
+  with(as.list(c(parameters)), {
+    out <- ode(y = init_state, times = timeline, func = seir_dt, parms = parameters)
+    out.df <- data.frame(out)
+    i_peak <- out.df[which.max(out.df[["I"]]),]
+    return(as.numeric(i_peak[["I"]]))
+  })
+} 
+
+p_set <- sensitivity::parameterSets(
+    par.ranges = list(
+      theta = c(2, 5),
+      p = c(0.1, 0.2),
+      sigmad = c(5, 14),
+      gammad = c(20, 25),
+      mu = c(mu_est, mu_est),
+      lk.t = c(30,60),
+      lk.len = c(30,120),
+      lk.eff = c(0.1, 0.8)
+    ),
+    samples = c(
+      3, 5, 3, 3,
+      1, 3, 4, 5
+    ),
+    method = "grid"
+)
+
+unique(p_set[,"lk.len"])
+```
+```{r}
+seir_fun(p_set[20,])
+```
+
+### Run model per sample of parameter set
+
+```{r}
+results.df <- data.frame(p_set)
+results.df[["imax"]] <- 0.0
+start_time <- Sys.time()
+for (rr in 1:nrow(p_set) ) {
+# for (rr in 1:1000 ) {
+   results.df[rr,"imax"] <- seir_fun(p_set[rr,])
+}
+end_time <- Sys.time()
+end_time - start_time # Time difference of 2.52515 mins
+```
+
+![Here's one I made earlier](img/heres_one_made_earlier.png)
+
+```{r}
+p_best <- results.df[which.min(results.df[["imax"]]),]
+p_best
+plot_out(data.frame(ode(y = init_state, times = timeline, func = seir_dt, parms = p_best)))
+```
+
+### Sensitivity analysis
+
+```{r}
+
+fs <- c("theta", "p", "sigmad", "gammad", "mu", "lk.t", "lk.len", "lk.eff")
+results.df.ft <- results.df
+results.df.ft[fs] <- lapply(results.df[fs], factor)
+
+gTheta <- ggplot(data = results.df.ft, aes(x = theta, y = imax)) + geom_boxplot()
+gP <- ggplot(data = results.df.ft, aes(x =p, y = imax)) + geom_boxplot()
+gSigmad <- ggplot(data = results.df.ft, aes(x = sigmad, y = imax)) + geom_boxplot()
+gGammad <- ggplot(data = results.df.ft, aes(x = gammad, y = imax)) + geom_boxplot()
+gLkt <- ggplot(data = results.df.ft, aes(x = lk.t, y = imax)) + geom_boxplot()
+gLklen <- ggplot(data = results.df.ft, aes(x = lk.len, y = imax)) + geom_boxplot()
+gLkeff <- ggplot(data = results.df.ft, aes(x = lk.eff, y = imax)) + geom_boxplot()
+
+grid.arrange(gTheta, gP, gSigmad, gGammad, gLkt, gLklen, gLkeff, ncol = 4)
+
+```
+
+
+```{r}
+library(ggsci)
+ggplot(data = results.df.ft, aes(x = lk.len, y = imax, fill = p)) +
+  geom_boxplot() +
+  facet_grid(lk.t~theta, labeller = label_both) +
+  scale_fill_npg()
+
+
+```
+
+```{r}
+ggplot(data = results.df, aes(x = p, y = theta, color = imax)) + geom_point() + scale_color_gradient(low="blue", high="red")
+```
+
+# Structure sensitivity
+
+
+
+# References
+ - Sampling and sensitivity analyses tools (SaSAT) for computational modelling https://tbiomed.biomedcentral.com/articles/10.1186/1742-4682-5-4#Sec18
+
+ - An introduction to sensitivity analysis https://ocw.mit.edu/courses/sloan-school-of-management/15-988-system-dynamics-self-study-fall-1998-spring-1999/readings/sensitivityanalysis.pdf
+
+ - Handbook of Uncertainty Quantification pp 1103-1122, Introduction to Sensitivity Analysis
+ https://link.springer.com/referenceworkentry/10.1007%2F978-3-319-12385-1_31
+
+ - R package `sensitivity` https://cran.r-project.org/web/packages/sensitivity/sensitivity.pdf
+
+ - Overview of advantages and drawbacks of different methods for sensitivity analysis in the context of performance assessment https://igdtp.eu/wp-content/uploads/2017/09/WG1-5_overview_becker.pdf
+ - Applying a Global Sensitivity Analysis Workflow to Improve the Computational Efficiencies in Physiologically-Based Pharmacokinetic Modeling https://www.frontiersin.org/articles/10.3389/fphar.2018.00588/full
+ 
