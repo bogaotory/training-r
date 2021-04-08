@@ -60,6 +60,11 @@ Two parameters of uniform distribution
 
 ```{r}
 # install.packages("lhs")
+library("deSolve")
+library("ggplot2") #; library(ggsci)
+library("gridExtra")
+library("scales") # label_percent()
+
 library("lhs")
 set.seed(10)
 A <- lhs::randomLHS(5, 2) # 5 samples, 2 parameters
@@ -281,7 +286,7 @@ unique(p_set[,"lk.len"])
 seir_fun(c(p_set[20,], lk.on = TRUE))
 ```
 
-### Run model per sample of parameter set
+### Simulation
 
 ```{r}
 f_name <- "results.df.rds"
@@ -501,13 +506,13 @@ plot_compare <- function(out.df, out7.df) {
       geom = "text",
       x = e_max[["time"]] - 5, 
       y = e_max[["E"]] + 0.05, 
-      label = paste(e_max$time, label_percent()(e_max$I), sep = ", ")
+      label = paste(e_max$time, label_percent()(e_max$E), sep = ", ")
     ) +
     annotate(
       geom = "text",
       x = e_max7[["time"]] + 5, 
       y = e_max7[["E"]] + 0.05, 
-      label = paste(e_max7$time, label_percent()(e_max7$I), sep = ", ")
+      label = paste(e_max7$time, label_percent()(e_max7$E), sep = ", ")
     ) +
     geom_curve(aes(
         xend = e_max7[["time"]],
