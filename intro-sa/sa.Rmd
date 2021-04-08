@@ -32,12 +32,12 @@ By showing how the model respond to these changes, sensitivity analysis is usefu
 
 # Parameter sensitivity
 
-Challenges for a modeller when choosing value for parameters is that in the real world:
+It is often challenging for a modeller to chose a unique value for their model parameters, since in the real world:
 
- - Many model parameters are difficult or even impossible to measure to a great deal of accuracy.
- - Parameter values change over time.
+ - Many model parameters are difficult or even impossible to measure with a good degree of certainty.
+ - Parameter values may change over time.
 
-Therefore, often the modeller can not be certain about the value chosen for a parameter and has to use **estimates**. Sensitivity analysis allows the modeller to determine what level of accuracy is required for a parameter:
+Therefore, often the modeller cannot be certain about the value chosen for a parameter and has to use **estimates**. Sensitivity analysis allows the modeller to determine what the reasonable ranges for those estimates are:
 
  - Greater precision is needed for parameters that the model is sensitive to
  - Less precision is needed for parameters that the model is insensitive to
@@ -46,9 +46,9 @@ Therefore, often the modeller can not be certain about the value chosen for a pa
 
 ## Sampling
 
-Each input parameter of a model can be defined to have an appropriate **probability density function**. Then, the model can be simulated by **sampling** a single value from each parameter's distribution. Many samples should be taken (and for stochastic models many simulations should be run per sample), producing variable output values.
+Each input parameter of a model can be defined to have an appropriate **probability density function** (pdf). Then, the model can be simulated by **sampling** a single value from each parameter's distribution. Many samples should be taken (and for stochastic models many simulations should be run per sample), producing variable output values.
 
-Sampling value for one parameter is straightforward, but as the dimension of the parameter space increases, the complexity increases exponentially, which can quite easily exceed the available computing resources you have available.
+Sampling values for one parameter is straightforward, but as the dimension of the parameter space increases, the complexity increases exponentially, which can quite easily exceed the available computing resources you have available.
 
 There are various approaches that could be taken to sample from the parameter distributions. In a 2-dimensional parameter space:
 
@@ -56,7 +56,7 @@ There are various approaches that could be taken to sample from the parameter di
 
 ### Latin hypercube sampling with the `lhs` package in R
 
-Two parameters of uniform distribution
+Let's sample two parameters following a uniform distribution:
 
 ```{r}
 # install.packages("lhs")
@@ -91,7 +91,7 @@ grid.arrange(gA, gA_exp, ncol = 2)
 ```
 
 
-X1 is normally distributed
+What if X1 is normally distributed? Note that x2 is still follows a uniform distribution.
 
 ```{r}
 B <- lhs::randomLHS(1000, 2) # 1000 samples of 2 parameters
@@ -110,11 +110,11 @@ ggplot(data = data.frame(B)) +
 
 
 
-### Sampling with the `sensitivity` package in R
+### Sampling parameter sets with the `sensitivity` package in R
 
 The `sensitivity::parameterSets` function provides three methods of sampling:
 
- 1. Method "sobol" generates uniformly distributed Sobol low discrepancy numbers, using the `sobol`
+ 1. Method "sobol" generates uniformly distributed random numbers, using the `sobol`
 function in the `randtoolbox` package.
 
 ```{r}
@@ -151,9 +151,9 @@ X.innergrid <- sensitivity::parameterSets(
 points(X.innergrid, col="red")
 ```
 
-## Example SEIR model
+## Example of parameter sampling in an SEIR model
 
-### Definition
+### Model definition
 
 ```{r}
 rm(list = ls())
@@ -206,7 +206,7 @@ plot_out <- function(out.df) {
 
 
 ```{r}
-# Set estimated parameter values
+# Set parameter estimates
 # beta <- 520/365; # beta = contact_rate * transmission_risk
 # sigma <- 1/60; # 1/latent_days
 # gamma <- 1/30; # 1/infectious_days
@@ -286,7 +286,7 @@ unique(p_set[,"lk.len"])
 seir_fun(c(p_set[20,], lk.on = TRUE))
 ```
 
-### Simulation
+### Run model per sample of parameter set
 
 ```{r}
 f_name <- "results.df.rds"
@@ -351,7 +351,7 @@ ggplot(data = results.df.ft, aes(x = lk.len, y = imax, fill = p)) +
 #ggplot(data = results.df, aes(x = p, y = theta, color = imax)) + geom_point() + scale_color_gradient(low="blue", high="red")
 ```
 
-# Structure sensitivity
+# Model structural uncertainty
 
 > ... We argue that if we lack detailed knowledge of the biology of the transmission process, parameter estimation should be accompanied by a structural sensitivity analysis, in addition to the standard statistical uncertainty analysis. ... 
 
